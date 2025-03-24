@@ -320,12 +320,12 @@ const Canvas = struct {
         const screen_width = @as(f32, @floatFromInt(rl.getScreenWidth()));
         const screen_height = @as(f32, @floatFromInt(rl.getScreenHeight()));
 
-        const base_spacing: f32 = 1400.0;
+        const base_spacing: f32 = 3200.0;
         const grid_spacing = std.math.pow(f32, base_spacing * self.scale, 0.5);
 
         const adjusted_spacing = @max(0, grid_spacing);
 
-        const grid_color = rl.Color{ .r = 40, .g = 40, .b = 40, .a = 255 };
+        const grid_color = rl.Color{ .r = 101, .g = 156, .b = 140, .a = 255 };
         const offset_x = @mod(self.x, adjusted_spacing);
         const offset_y = @mod(self.y, adjusted_spacing);
 
