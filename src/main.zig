@@ -140,6 +140,16 @@ const Canvas = struct {
         try self.items.append(Item{ .Image = new_image });
     }
 
+    fn isMouseOver(self: Canvas) bool {
+        const mouse_x = @as(f32, @floatFromInt(rl.getMouseX()));
+        const mouse_y = @as(f32, @floatFromInt(rl.getMouseY()));
+        const width = @as(f32, @floatFromInt(self.texture.width)) * self.scale;
+        const height = @as(f32, @floatFromInt(self.texture.height)) * self.scale;
+
+        return mouse_x >= self.x and mouse_x <= self.x + width and
+            mouse_y >= self.y and mouse_y <= self.y + height;
+    }
+
     pub fn update(self: *Canvas) void {
         if (rl.isKeyPressed(.h)) {
             self.hand_mode = true;
@@ -163,7 +173,7 @@ const Canvas = struct {
             self.zoom(mouse_x, mouse_y, wheel_move * 0.2);
         }
 
-        if (rl.isKeyDown(.left_control)) {
+        if (ctrl_pressed) {
             if (rl.isKeyPressed(.kp_add) or rl.isKeyPressed(.equal)) {
                 self.zoom(mouse_x, mouse_y, 0.5);
             }
@@ -196,8 +206,11 @@ const Canvas = struct {
             }
         } else {
             if (rl.isMouseButtonPressed(.left)) {
-                if (self.selector.selected_item) |idx| {
-                    var item = self.items.items[idx];
+                var found_item: ?usize = null;
+                var i: usize = self.items.items.len;
+                while (i > 0) {
+                    i -= 1;
+                    var item = self.items.items[i];
                     const bounds = item.getBoundingBox();
                     const adjusted_bounds = rl.Rectangle{
                         .x = self.x + bounds.x * self.scale,
@@ -206,43 +219,29 @@ const Canvas = struct {
                         .height = bounds.height * self.scale,
                     };
                     if (rl.checkCollisionPointRec(rl.Vector2{ .x = mouse_x, .y = mouse_y }, adjusted_bounds)) {
-                        self.dragging_item = true;
-                        self.initial_mouse_x = mouse_x;
-                        self.initial_mouse_y = mouse_y;
-                        self.initial_item_x = bounds.x;
-                        self.initial_item_y = bounds.y;
+                        found_item = i;
+                        break;
                     }
                 }
 
-                if (!self.dragging_item) {
-                    var found_item: ?usize = null;
-                    for (self.items.items, 0..) |item, idx| {
-                        var i = item;
-                        const bounds = i.getBoundingBox();
-                        const adjusted_bounds = rl.Rectangle{
-                            .x = self.x + bounds.x * self.scale,
-                            .y = self.y + bounds.y * self.scale,
-                            .width = bounds.width * self.scale,
-                            .height = bounds.height * self.scale,
-                        };
-                        if (rl.checkCollisionPointRec(rl.Vector2{ .x = mouse_x, .y = mouse_y }, adjusted_bounds)) {
-                            found_item = idx;
-                            break;
-                        }
-                    }
+                if (found_item) |idx| {
                     self.selector.selected_item = found_item;
-
-                    if (found_item == null) {
-                        self.selecting = true;
-                        self.select_start_x = mouse_x;
-                        self.select_start_y = mouse_y;
-                    }
+                    self.dragging_item = true;
+                    self.initial_mouse_x = mouse_x;
+                    self.initial_mouse_y = mouse_y;
+                    const bounds = self.items.items[idx].getBoundingBox();
+                    self.initial_item_x = bounds.x;
+                    self.initial_item_y = bounds.y;
+                } else {
+                    self.selector.selected_item = null;
+                    self.selecting = true;
+                    self.select_start_x = mouse_x;
+                    self.select_start_y = mouse_y;
                 }
             } else if (rl.isMouseButtonReleased(.left)) {
                 self.selecting = false;
                 self.dragging_item = false;
             }
-
             if (self.dragging_item) {
                 if (self.selector.selected_item) |idx| {
                     const delta_x = (mouse_x - self.initial_mouse_x) / self.scale;
