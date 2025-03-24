@@ -21,6 +21,67 @@ const Item = union(ItemType) {
             .Image => |*img| rl.unloadTexture(img.texture),
         }
     }
+
+    pub fn getBoundingBox(self: *Item) rl.Rectangle {
+        const box = switch (self.*) {
+            .Image => |img| rl.Rectangle{
+                .x = img.x,
+                .y = img.y,
+                .width = @as(f32, @floatFromInt(img.texture.width)),
+                .height = @as(f32, @floatFromInt(img.texture.height)),
+            },
+        };
+        return box;
+    }
+};
+
+const Selector = struct {
+    selected_item: ?usize = null,
+    handle_size: f32 = 8.0,
+    rotation_line_length: f32 = 30.0,
+
+    pub fn init() Selector {
+        return Selector{};
+    }
+
+    pub fn draw(self: Selector, items: []const Item, canvas_x: f32, canvas_y: f32, canvas_scale: f32) void {
+        if (self.selected_item) |idx| {
+            if (idx >= items.len) {
+                return;
+            }
+            var item = items[idx];
+            const bounds = item.getBoundingBox();
+            const adjusted_bounds = rl.Rectangle{
+                .x = canvas_x + bounds.x * canvas_scale,
+                .y = canvas_y + bounds.y * canvas_scale,
+                .width = bounds.width * canvas_scale,
+                .height = bounds.height * canvas_scale,
+            };
+
+            rl.drawRectangleLinesEx(adjusted_bounds, 1.0, rl.Color.blue);
+
+            const half_handle = self.handle_size / 2.0;
+
+            rl.drawRectangleRec(rl.Rectangle{ .x = adjusted_bounds.x - half_handle, .y = adjusted_bounds.y - half_handle, .width = self.handle_size, .height = self.handle_size }, rl.Color.white);
+            rl.drawRectangleRec(rl.Rectangle{ .x = adjusted_bounds.x + adjusted_bounds.width - half_handle, .y = adjusted_bounds.y - half_handle, .width = self.handle_size, .height = self.handle_size }, rl.Color.white);
+            rl.drawRectangleRec(rl.Rectangle{ .x = adjusted_bounds.x - half_handle, .y = adjusted_bounds.y + adjusted_bounds.height - half_handle, .width = self.handle_size, .height = self.handle_size }, rl.Color.white);
+            rl.drawRectangleRec(rl.Rectangle{ .x = adjusted_bounds.x + adjusted_bounds.width - half_handle, .y = adjusted_bounds.y + adjusted_bounds.height - half_handle, .width = self.handle_size, .height = self.handle_size }, rl.Color.white);
+
+            rl.drawRectangleRec(rl.Rectangle{ .x = adjusted_bounds.x + adjusted_bounds.width / 2.0 - half_handle, .y = adjusted_bounds.y - half_handle, .width = self.handle_size, .height = self.handle_size }, rl.Color.white);
+            rl.drawRectangleRec(rl.Rectangle{ .x = adjusted_bounds.x + adjusted_bounds.width / 2.0 - half_handle, .y = adjusted_bounds.y + adjusted_bounds.height - half_handle, .width = self.handle_size, .height = self.handle_size }, rl.Color.white);
+            rl.drawRectangleRec(rl.Rectangle{ .x = adjusted_bounds.x - half_handle, .y = adjusted_bounds.y + adjusted_bounds.height / 2.0 - half_handle, .width = self.handle_size, .height = self.handle_size }, rl.Color.white);
+            rl.drawRectangleRec(rl.Rectangle{ .x = adjusted_bounds.x + adjusted_bounds.width - half_handle, .y = adjusted_bounds.y + adjusted_bounds.height / 2.0 - half_handle, .width = self.handle_size, .height = self.handle_size }, rl.Color.white);
+
+            const top_center_x = adjusted_bounds.x + adjusted_bounds.width / 2.0;
+            const top_center_y = adjusted_bounds.y;
+            rl.drawLineEx(rl.Vector2{ .x = top_center_x, .y = top_center_y }, rl.Vector2{ .x = top_center_x, .y = top_center_y - self.rotation_line_length }, 1.0, rl.Color.blue);
+            rl.drawCircleV(rl.Vector2{ .x = top_center_x, .y = top_center_y - self.rotation_line_length }, self.handle_size / 2.0, rl.Color.white);
+        }
+    }
+
+    pub fn clearSelection(self: *Selector) void {
+        self.selected_item = null;
+    }
 };
 
 const Canvas = struct {
@@ -31,15 +92,20 @@ const Canvas = struct {
     min_scale: f32 = 0.1,
     max_scale: f32 = 5.0,
     dragging: bool = false,
+    dragging_item: bool = false,
     hand_mode: bool = false,
     initial_mouse_x: f32 = 0,
     initial_mouse_y: f32 = 0,
     initial_canvas_x: f32 = 0,
     initial_canvas_y: f32 = 0,
+    initial_item_x: f32 = 0,
+    initial_item_y: f32 = 0,
     select_start_x: f32 = 0,
     select_start_y: f32 = 0,
     selecting: bool = false,
     cursor: Cursor,
+    selector: Selector = Selector.init(),
+    grid_spacing: f32 = 50.0,
 
     pub fn init(allocator: std.mem.Allocator) !Canvas {
         const cursor = try Cursor.init();
@@ -79,9 +145,12 @@ const Canvas = struct {
             self.hand_mode = true;
             self.selecting = false;
             self.dragging = false;
+            self.dragging_item = false;
+            self.selector.clearSelection();
         } else if (rl.isKeyPressed(.v)) {
             self.hand_mode = false;
             self.dragging = false;
+            self.dragging_item = false;
             self.selecting = false;
         }
 
@@ -127,11 +196,64 @@ const Canvas = struct {
             }
         } else {
             if (rl.isMouseButtonPressed(.left)) {
-                self.selecting = true;
-                self.select_start_x = mouse_x;
-                self.select_start_y = mouse_y;
+                if (self.selector.selected_item) |idx| {
+                    var item = self.items.items[idx];
+                    const bounds = item.getBoundingBox();
+                    const adjusted_bounds = rl.Rectangle{
+                        .x = self.x + bounds.x * self.scale,
+                        .y = self.y + bounds.y * self.scale,
+                        .width = bounds.width * self.scale,
+                        .height = bounds.height * self.scale,
+                    };
+                    if (rl.checkCollisionPointRec(rl.Vector2{ .x = mouse_x, .y = mouse_y }, adjusted_bounds)) {
+                        self.dragging_item = true;
+                        self.initial_mouse_x = mouse_x;
+                        self.initial_mouse_y = mouse_y;
+                        self.initial_item_x = bounds.x;
+                        self.initial_item_y = bounds.y;
+                    }
+                }
+
+                if (!self.dragging_item) {
+                    var found_item: ?usize = null;
+                    for (self.items.items, 0..) |item, idx| {
+                        var i = item;
+                        const bounds = i.getBoundingBox();
+                        const adjusted_bounds = rl.Rectangle{
+                            .x = self.x + bounds.x * self.scale,
+                            .y = self.y + bounds.y * self.scale,
+                            .width = bounds.width * self.scale,
+                            .height = bounds.height * self.scale,
+                        };
+                        if (rl.checkCollisionPointRec(rl.Vector2{ .x = mouse_x, .y = mouse_y }, adjusted_bounds)) {
+                            found_item = idx;
+                            break;
+                        }
+                    }
+                    self.selector.selected_item = found_item;
+
+                    if (found_item == null) {
+                        self.selecting = true;
+                        self.select_start_x = mouse_x;
+                        self.select_start_y = mouse_y;
+                    }
+                }
             } else if (rl.isMouseButtonReleased(.left)) {
                 self.selecting = false;
+                self.dragging_item = false;
+            }
+
+            if (self.dragging_item) {
+                if (self.selector.selected_item) |idx| {
+                    const delta_x = (mouse_x - self.initial_mouse_x) / self.scale;
+                    const delta_y = (mouse_y - self.initial_mouse_y) / self.scale;
+                    switch (self.items.items[idx]) {
+                        .Image => |*img| {
+                            img.x = self.initial_item_x + delta_x;
+                            img.y = self.initial_item_y + delta_y;
+                        },
+                    }
+                }
             }
         }
     }
@@ -147,6 +269,7 @@ const Canvas = struct {
     }
 
     pub fn draw(self: Canvas) void {
+        self.drawGrid();
         for (self.items.items) |item| {
             switch (item) {
                 .Image => |img| {
@@ -186,13 +309,43 @@ const Canvas = struct {
             rl.drawRectangleLinesEx(rect, 1.0, rl.Color.blue);
         }
 
+        if (!self.hand_mode) {
+            self.selector.draw(self.items.items, self.x, self.y, self.scale);
+        }
+
         self.cursor.draw(self.hand_mode, self.dragging);
+    }
+
+    fn drawGrid(self: Canvas) void {
+        const screen_width = @as(f32, @floatFromInt(rl.getScreenWidth()));
+        const screen_height = @as(f32, @floatFromInt(rl.getScreenHeight()));
+
+        const base_spacing: f32 = 1400.0;
+        const grid_spacing = std.math.pow(f32, base_spacing * self.scale, 0.5);
+
+        const adjusted_spacing = @max(0, grid_spacing);
+
+        const grid_color = rl.Color{ .r = 40, .g = 40, .b = 40, .a = 255 };
+        const offset_x = @mod(self.x, adjusted_spacing);
+        const offset_y = @mod(self.y, adjusted_spacing);
+
+        const extend_area: f32 = @max(screen_width, screen_height);
+
+        var x = self.x - extend_area - offset_x;
+        while (x < self.x + screen_width + extend_area) : (x += adjusted_spacing) {
+            rl.drawLineEx(rl.Vector2{ .x = x, .y = self.y - extend_area }, rl.Vector2{ .x = x, .y = self.y + screen_height + extend_area }, 1.0, grid_color);
+        }
+
+        var y = self.y - extend_area - offset_y;
+        while (y < self.y + screen_height + extend_area) : (y += adjusted_spacing) {
+            rl.drawLineEx(rl.Vector2{ .x = self.x - extend_area, .y = y }, rl.Vector2{ .x = self.x + screen_width + extend_area, .y = y }, 1.0, grid_color);
+        }
     }
 };
 
 pub fn main() anyerror!void {
-    const screenWidth = 1280;
-    const screenHeight = 720;
+    const screenWidth = 1600;
+    const screenHeight = 900;
 
     rl.setConfigFlags(.{ .window_resizable = true });
     rl.initWindow(screenWidth, screenHeight, "sakura");
@@ -207,6 +360,7 @@ pub fn main() anyerror!void {
     defer canvas.deinit();
 
     try canvas.addImage("test/image.png", 100, 100);
+    try canvas.addImage("test/image2.png", 180, 180);
 
     while (!rl.windowShouldClose()) {
         canvas.update();
@@ -214,7 +368,7 @@ pub fn main() anyerror!void {
         rl.beginDrawing();
         defer rl.endDrawing();
 
-        rl.clearBackground(rl.Color.light_gray);
+        rl.clearBackground(rl.Color{ .a = 255, .r = 119, .g = 209, .b = 184 });
         canvas.draw();
     }
 }
