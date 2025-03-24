@@ -10,7 +10,10 @@ const Image = struct {
     texture: rl.Texture2D,
     x: f32,
     y: f32,
-    scale: f32 = 1.0,
+    scale_x: f32 = 1.0,
+    scale_y: f32 = 1.0,
+    width: f32,
+    height: f32,
 };
 
 const Item = union(ItemType) {
@@ -27,8 +30,8 @@ const Item = union(ItemType) {
             .Image => |img| rl.Rectangle{
                 .x = img.x,
                 .y = img.y,
-                .width = @as(f32, @floatFromInt(img.texture.width)),
-                .height = @as(f32, @floatFromInt(img.texture.height)),
+                .width = img.width * img.scale_x,
+                .height = img.height * img.scale_y,
             },
         };
         return box;
@@ -37,11 +40,66 @@ const Item = union(ItemType) {
 
 const Selector = struct {
     selected_item: ?usize = null,
-    handle_size: f32 = 8.0,
+    handle_size: f32 = 12.0,
     rotation_line_length: f32 = 30.0,
+    resizing: bool = false,
+    active_handle: ?HandleType = null,
+    border_color: rl.Color = rl.Color{ .r = 177, .g = 98, .b = 134, .a = 255 },
+    handle_color: rl.Color = rl.Color{ .r = 177, .g = 98, .b = 134, .a = 255 },
+
+    const HandleType = enum {
+        TopLeft,
+        TopRight,
+        BottomLeft,
+        BottomRight,
+        TopMid,
+        BottomMid,
+        LeftMid,
+        RightMid,
+    };
 
     pub fn init() Selector {
         return Selector{};
+    }
+
+    pub fn getHandleAtPosition(self: Selector, items: []const Item, canvas_x: f32, canvas_y: f32, canvas_scale: f32, mouse_x: f32, mouse_y: f32) ?HandleType {
+        if (self.selected_item) |idx| {
+            if (idx >= items.len) return null;
+            var item = items[idx];
+            const bounds = item.getBoundingBox();
+            const adjusted_bounds = rl.Rectangle{
+                .x = canvas_x + bounds.x * canvas_scale,
+                .y = canvas_y + bounds.y * canvas_scale,
+                .width = bounds.width * canvas_scale,
+                .height = bounds.height * canvas_scale,
+            };
+
+            const half_handle = self.handle_size / 2.0;
+
+            const handles = .{
+                .{ .type = HandleType.TopLeft, .x = adjusted_bounds.x - half_handle, .y = adjusted_bounds.y - half_handle },
+                .{ .type = HandleType.TopRight, .x = adjusted_bounds.x + adjusted_bounds.width - half_handle, .y = adjusted_bounds.y - half_handle },
+                .{ .type = HandleType.BottomLeft, .x = adjusted_bounds.x - half_handle, .y = adjusted_bounds.y + adjusted_bounds.height - half_handle },
+                .{ .type = HandleType.BottomRight, .x = adjusted_bounds.x + adjusted_bounds.width - half_handle, .y = adjusted_bounds.y + adjusted_bounds.height - half_handle },
+                .{ .type = HandleType.TopMid, .x = adjusted_bounds.x + adjusted_bounds.width / 2.0 - half_handle, .y = adjusted_bounds.y - half_handle },
+                .{ .type = HandleType.BottomMid, .x = adjusted_bounds.x + adjusted_bounds.width / 2.0 - half_handle, .y = adjusted_bounds.y + adjusted_bounds.height - half_handle },
+                .{ .type = HandleType.LeftMid, .x = adjusted_bounds.x - half_handle, .y = adjusted_bounds.y + adjusted_bounds.height / 2.0 - half_handle },
+                .{ .type = HandleType.RightMid, .x = adjusted_bounds.x + adjusted_bounds.width - half_handle, .y = adjusted_bounds.y + adjusted_bounds.height / 2.0 - half_handle },
+            };
+
+            inline for (handles) |handle| {
+                const handle_rect = rl.Rectangle{
+                    .x = handle.x,
+                    .y = handle.y,
+                    .width = self.handle_size,
+                    .height = self.handle_size,
+                };
+                if (rl.checkCollisionPointRec(rl.Vector2{ .x = mouse_x, .y = mouse_y }, handle_rect)) {
+                    return handle.type;
+                }
+            }
+        }
+        return null;
     }
 
     pub fn draw(self: Selector, items: []const Item, canvas_x: f32, canvas_y: f32, canvas_scale: f32) void {
@@ -58,29 +116,31 @@ const Selector = struct {
                 .height = bounds.height * canvas_scale,
             };
 
-            rl.drawRectangleLinesEx(adjusted_bounds, 1.0, rl.Color.blue);
+            rl.drawRectangleLinesEx(adjusted_bounds, 3, self.border_color);
 
             const half_handle = self.handle_size / 2.0;
 
-            rl.drawRectangleRec(rl.Rectangle{ .x = adjusted_bounds.x - half_handle, .y = adjusted_bounds.y - half_handle, .width = self.handle_size, .height = self.handle_size }, rl.Color.white);
-            rl.drawRectangleRec(rl.Rectangle{ .x = adjusted_bounds.x + adjusted_bounds.width - half_handle, .y = adjusted_bounds.y - half_handle, .width = self.handle_size, .height = self.handle_size }, rl.Color.white);
-            rl.drawRectangleRec(rl.Rectangle{ .x = adjusted_bounds.x - half_handle, .y = adjusted_bounds.y + adjusted_bounds.height - half_handle, .width = self.handle_size, .height = self.handle_size }, rl.Color.white);
-            rl.drawRectangleRec(rl.Rectangle{ .x = adjusted_bounds.x + adjusted_bounds.width - half_handle, .y = adjusted_bounds.y + adjusted_bounds.height - half_handle, .width = self.handle_size, .height = self.handle_size }, rl.Color.white);
-
-            rl.drawRectangleRec(rl.Rectangle{ .x = adjusted_bounds.x + adjusted_bounds.width / 2.0 - half_handle, .y = adjusted_bounds.y - half_handle, .width = self.handle_size, .height = self.handle_size }, rl.Color.white);
-            rl.drawRectangleRec(rl.Rectangle{ .x = adjusted_bounds.x + adjusted_bounds.width / 2.0 - half_handle, .y = adjusted_bounds.y + adjusted_bounds.height - half_handle, .width = self.handle_size, .height = self.handle_size }, rl.Color.white);
-            rl.drawRectangleRec(rl.Rectangle{ .x = adjusted_bounds.x - half_handle, .y = adjusted_bounds.y + adjusted_bounds.height / 2.0 - half_handle, .width = self.handle_size, .height = self.handle_size }, rl.Color.white);
-            rl.drawRectangleRec(rl.Rectangle{ .x = adjusted_bounds.x + adjusted_bounds.width - half_handle, .y = adjusted_bounds.y + adjusted_bounds.height / 2.0 - half_handle, .width = self.handle_size, .height = self.handle_size }, rl.Color.white);
-
             const top_center_x = adjusted_bounds.x + adjusted_bounds.width / 2.0;
             const top_center_y = adjusted_bounds.y;
-            rl.drawLineEx(rl.Vector2{ .x = top_center_x, .y = top_center_y }, rl.Vector2{ .x = top_center_x, .y = top_center_y - self.rotation_line_length }, 1.0, rl.Color.blue);
-            rl.drawCircleV(rl.Vector2{ .x = top_center_x, .y = top_center_y - self.rotation_line_length }, self.handle_size / 2.0, rl.Color.white);
+            rl.drawLineEx(rl.Vector2{ .x = top_center_x, .y = top_center_y }, rl.Vector2{ .x = top_center_x, .y = top_center_y - self.rotation_line_length }, 1.0, self.border_color);
+            rl.drawCircleV(rl.Vector2{ .x = top_center_x, .y = top_center_y - self.rotation_line_length }, self.handle_size / 2.0, self.border_color);
+
+            rl.drawRectangleRec(rl.Rectangle{ .x = adjusted_bounds.x - half_handle, .y = adjusted_bounds.y - half_handle, .width = self.handle_size, .height = self.handle_size }, self.handle_color);
+            rl.drawRectangleRec(rl.Rectangle{ .x = adjusted_bounds.x + adjusted_bounds.width - half_handle, .y = adjusted_bounds.y - half_handle, .width = self.handle_size, .height = self.handle_size }, self.handle_color);
+            rl.drawRectangleRec(rl.Rectangle{ .x = adjusted_bounds.x - half_handle, .y = adjusted_bounds.y + adjusted_bounds.height - half_handle, .width = self.handle_size, .height = self.handle_size }, self.handle_color);
+            rl.drawRectangleRec(rl.Rectangle{ .x = adjusted_bounds.x + adjusted_bounds.width - half_handle, .y = adjusted_bounds.y + adjusted_bounds.height - half_handle, .width = self.handle_size, .height = self.handle_size }, self.handle_color);
+
+            rl.drawRectangleRec(rl.Rectangle{ .x = adjusted_bounds.x + adjusted_bounds.width / 2.0 - half_handle, .y = adjusted_bounds.y - half_handle, .width = self.handle_size, .height = self.handle_size }, self.handle_color);
+            rl.drawRectangleRec(rl.Rectangle{ .x = adjusted_bounds.x + adjusted_bounds.width / 2.0 - half_handle, .y = adjusted_bounds.y + adjusted_bounds.height - half_handle, .width = self.handle_size, .height = self.handle_size }, self.handle_color);
+            rl.drawRectangleRec(rl.Rectangle{ .x = adjusted_bounds.x - half_handle, .y = adjusted_bounds.y + adjusted_bounds.height / 2.0 - half_handle, .width = self.handle_size, .height = self.handle_size }, self.handle_color);
+            rl.drawRectangleRec(rl.Rectangle{ .x = adjusted_bounds.x + adjusted_bounds.width - half_handle, .y = adjusted_bounds.y + adjusted_bounds.height / 2.0 - half_handle, .width = self.handle_size, .height = self.handle_size }, self.handle_color);
         }
     }
 
     pub fn clearSelection(self: *Selector) void {
         self.selected_item = null;
+        self.resizing = false;
+        self.active_handle = null;
     }
 };
 
@@ -100,6 +160,10 @@ const Canvas = struct {
     initial_canvas_y: f32 = 0,
     initial_item_x: f32 = 0,
     initial_item_y: f32 = 0,
+    initial_item_width: f32 = 0,
+    initial_item_height: f32 = 0,
+    initial_item_scale_x: f32 = 0,
+    initial_item_scale_y: f32 = 0,
     select_start_x: f32 = 0,
     select_start_y: f32 = 0,
     selecting: bool = false,
@@ -135,19 +199,13 @@ const Canvas = struct {
             .texture = texture,
             .x = x,
             .y = y,
+            .scale_x = 1.0,
+            .scale_y = 1.0,
+            .width = @as(f32, @floatFromInt(texture.width)),
+            .height = @as(f32, @floatFromInt(texture.height)),
         };
 
         try self.items.append(Item{ .Image = new_image });
-    }
-
-    fn isMouseOver(self: Canvas) bool {
-        const mouse_x = @as(f32, @floatFromInt(rl.getMouseX()));
-        const mouse_y = @as(f32, @floatFromInt(rl.getMouseY()));
-        const width = @as(f32, @floatFromInt(self.texture.width)) * self.scale;
-        const height = @as(f32, @floatFromInt(self.texture.height)) * self.scale;
-
-        return mouse_x >= self.x and mouse_x <= self.x + width and
-            mouse_y >= self.y and mouse_y <= self.y + height;
     }
 
     pub fn update(self: *Canvas) void {
@@ -206,42 +264,141 @@ const Canvas = struct {
             }
         } else {
             if (rl.isMouseButtonPressed(.left)) {
-                var found_item: ?usize = null;
-                var i: usize = self.items.items.len;
-                while (i > 0) {
-                    i -= 1;
-                    var item = self.items.items[i];
-                    const bounds = item.getBoundingBox();
-                    const adjusted_bounds = rl.Rectangle{
-                        .x = self.x + bounds.x * self.scale,
-                        .y = self.y + bounds.y * self.scale,
-                        .width = bounds.width * self.scale,
-                        .height = bounds.height * self.scale,
-                    };
-                    if (rl.checkCollisionPointRec(rl.Vector2{ .x = mouse_x, .y = mouse_y }, adjusted_bounds)) {
-                        found_item = i;
-                        break;
+                if (self.selector.selected_item) |idx| {
+                    if (self.selector.active_handle == null) {
+                        self.selector.active_handle = self.selector.getHandleAtPosition(self.items.items, self.x, self.y, self.scale, mouse_x, mouse_y);
+                        if (self.selector.active_handle) |_| {
+                            self.selector.resizing = true;
+                            const bounds = self.items.items[idx].getBoundingBox();
+                            self.initial_item_width = bounds.width;
+                            self.initial_item_height = bounds.height;
+                            self.initial_item_x = bounds.x;
+                            self.initial_item_y = bounds.y;
+                            self.initial_mouse_x = mouse_x;
+                            self.initial_mouse_y = mouse_y;
+                            switch (self.items.items[idx]) {
+                                .Image => |img| {
+                                    self.initial_item_scale_x = img.scale_x;
+                                    self.initial_item_scale_y = img.scale_y;
+                                },
+                            }
+                        }
                     }
                 }
 
-                if (found_item) |idx| {
-                    self.selector.selected_item = found_item;
-                    self.dragging_item = true;
-                    self.initial_mouse_x = mouse_x;
-                    self.initial_mouse_y = mouse_y;
-                    const bounds = self.items.items[idx].getBoundingBox();
-                    self.initial_item_x = bounds.x;
-                    self.initial_item_y = bounds.y;
-                } else {
-                    self.selector.selected_item = null;
-                    self.selecting = true;
-                    self.select_start_x = mouse_x;
-                    self.select_start_y = mouse_y;
+                if (!self.selector.resizing) {
+                    var found_item: ?usize = null;
+                    var i: usize = self.items.items.len;
+                    while (i > 0) {
+                        i -= 1;
+                        var item = self.items.items[i];
+                        const bounds = item.getBoundingBox();
+                        const adjusted_bounds = rl.Rectangle{
+                            .x = self.x + bounds.x * self.scale,
+                            .y = self.y + bounds.y * self.scale,
+                            .width = bounds.width * self.scale,
+                            .height = bounds.height * self.scale,
+                        };
+                        if (rl.checkCollisionPointRec(rl.Vector2{ .x = mouse_x, .y = mouse_y }, adjusted_bounds)) {
+                            found_item = i;
+                            break;
+                        }
+                    }
+
+                    if (found_item) |idx| {
+                        self.selector.selected_item = found_item;
+                        self.dragging_item = true;
+                        self.initial_mouse_x = mouse_x;
+                        self.initial_mouse_y = mouse_y;
+                        const bounds = self.items.items[idx].getBoundingBox();
+                        self.initial_item_x = bounds.x;
+                        self.initial_item_y = bounds.y;
+                    } else {
+                        self.selector.selected_item = null;
+                        self.selecting = true;
+                        self.select_start_x = mouse_x;
+                        self.select_start_y = mouse_y;
+                    }
                 }
             } else if (rl.isMouseButtonReleased(.left)) {
                 self.selecting = false;
                 self.dragging_item = false;
+                self.selector.resizing = false;
+                self.selector.active_handle = null;
             }
+
+            if (self.selector.resizing and self.selector.active_handle != null and self.selector.selected_item != null) {
+                const idx = self.selector.selected_item.?;
+                const handle = self.selector.active_handle.?;
+                const delta_x = (mouse_x - self.initial_mouse_x) / self.scale;
+                const delta_y = (mouse_y - self.initial_mouse_y) / self.scale;
+
+                switch (self.items.items[idx]) {
+                    .Image => |*img| {
+                        var new_scale_x: f32 = img.scale_x;
+                        var new_scale_y: f32 = img.scale_y;
+                        var new_x: f32 = img.x;
+                        var new_y: f32 = img.y;
+
+                        switch (handle) {
+                            .TopLeft => {
+                                new_scale_x = (self.initial_item_width - delta_x) / img.width;
+                                new_scale_y = (self.initial_item_height - delta_y) / img.height;
+                                const new_scale = std.math.clamp((new_scale_x + new_scale_y) / 2.0, 0.1, 10.0);
+                                new_scale_x = new_scale;
+                                new_scale_y = new_scale;
+                                new_x = self.initial_item_x + delta_x;
+                                new_y = self.initial_item_y + delta_y;
+                            },
+                            .TopRight => {
+                                new_scale_x = (self.initial_item_width + delta_x) / img.width;
+                                new_scale_y = (self.initial_item_height - delta_y) / img.height;
+                                const new_scale = std.math.clamp((new_scale_x + new_scale_y) / 2.0, 0.1, 10.0);
+                                new_scale_x = new_scale;
+                                new_scale_y = new_scale;
+                                new_y = self.initial_item_y + delta_y;
+                            },
+                            .BottomLeft => {
+                                new_scale_x = (self.initial_item_width - delta_x) / img.width;
+                                new_scale_y = (self.initial_item_height + delta_y) / img.height;
+                                const new_scale = std.math.clamp((new_scale_x + new_scale_y) / 2.0, 0.1, 10.0);
+                                new_scale_x = new_scale;
+                                new_scale_y = new_scale;
+                                new_x = self.initial_item_x + delta_x;
+                            },
+                            .BottomRight => {
+                                new_scale_x = (self.initial_item_width + delta_x) / img.width;
+                                new_scale_y = (self.initial_item_height + delta_y) / img.height;
+                                const new_scale = std.math.clamp((new_scale_x + new_scale_y) / 2.0, 0.1, 10.0);
+                                new_scale_x = new_scale;
+                                new_scale_y = new_scale;
+                            },
+
+                            // NON CORNER HANDLES
+                            .TopMid => {
+                                new_scale_y = std.math.clamp((self.initial_item_height - delta_y) / img.height, 0.1, 10.0);
+                                new_y = self.initial_item_y + delta_y;
+                            },
+                            .BottomMid => {
+                                new_scale_y = std.math.clamp((self.initial_item_height + delta_y) / img.height, 0.1, 10.0);
+                            },
+                            .LeftMid => {
+                                new_scale_x = std.math.clamp((self.initial_item_width - delta_x) / img.width, 0.1, 10.0);
+                                new_x = self.initial_item_x + delta_x;
+                            },
+                            .RightMid => {
+                                new_scale_x = std.math.clamp((self.initial_item_width + delta_x) / img.width, 0.1, 10.0);
+                            },
+                        }
+
+                        img.scale_x = new_scale_x;
+                        img.scale_y = new_scale_y;
+                        img.x = new_x;
+                        img.y = new_y;
+                    },
+                }
+            }
+
             if (self.dragging_item) {
                 if (self.selector.selected_item) |idx| {
                     const delta_x = (mouse_x - self.initial_mouse_x) / self.scale;
@@ -275,8 +432,8 @@ const Canvas = struct {
                     const dest_rec = rl.Rectangle{
                         .x = self.x + img.x * self.scale,
                         .y = self.y + img.y * self.scale,
-                        .width = @as(f32, @floatFromInt(img.texture.width)) * self.scale,
-                        .height = @as(f32, @floatFromInt(img.texture.height)) * self.scale,
+                        .width = img.width * img.scale_x * self.scale,
+                        .height = img.height * img.scale_y * self.scale,
                     };
 
                     rl.drawTexturePro(img.texture, rl.Rectangle{
@@ -304,8 +461,8 @@ const Canvas = struct {
                 .width = rect_width,
                 .height = rect_height,
             };
-            rl.drawRectangleRec(rect, rl.Color{ .r = 0, .g = 128, .b = 255, .a = 128 });
-            rl.drawRectangleLinesEx(rect, 1.0, rl.Color.blue);
+            rl.drawRectangleRec(rect, rl.Color{ .r = 204, .g = 112, .b = 154, .a = 128 });
+            rl.drawRectangleLinesEx(rect, 1.0, rl.Color{ .r = 204, .g = 112, .b = 154, .a = 255 });
         }
 
         if (!self.hand_mode) {
