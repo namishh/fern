@@ -1,8 +1,30 @@
 const rl = @import("raylib");
 const std = @import("std");
+const Cursor = @import("cursor.zig").Cursor;
+
+const ItemType = enum {
+    Image,
+};
+
+const Image = struct {
+    texture: rl.Texture2D,
+    x: f32,
+    y: f32,
+    scale: f32 = 1.0,
+};
+
+const Item = union(ItemType) {
+    Image: Image,
+
+    pub fn deinit(self: *Item) void {
+        switch (self.*) {
+            .Image => |*img| rl.unloadTexture(img.texture),
+        }
+    }
+};
 
 const Canvas = struct {
-    texture: rl.Texture2D,
+    items: std.ArrayList(Item),
     x: f32,
     y: f32,
     scale: f32 = 1.0,
@@ -17,24 +39,39 @@ const Canvas = struct {
     select_start_x: f32 = 0,
     select_start_y: f32 = 0,
     selecting: bool = false,
+    cursor: Cursor,
 
-    pub fn init(screenWidth: i32, screenHeight: i32, imagePath: [:0]const u8) !Canvas {
-        const image = try rl.loadImage(imagePath);
-        defer rl.unloadImage(image);
-
-        const texture = try rl.loadTextureFromImage(image);
-        const x = @as(f32, @floatFromInt(@divTrunc((screenWidth - texture.width), 2)));
-        const y = @as(f32, @floatFromInt(@divTrunc((screenHeight - texture.height), 2)));
+    pub fn init(allocator: std.mem.Allocator) !Canvas {
+        const cursor = try Cursor.init();
 
         return Canvas{
-            .texture = texture,
-            .x = x,
-            .y = y,
+            .items = std.ArrayList(Item).init(allocator),
+            .x = 0,
+            .y = 0,
+            .cursor = cursor,
         };
     }
 
     pub fn deinit(self: *Canvas) void {
-        rl.unloadTexture(self.texture);
+        for (self.items.items) |*item| {
+            item.deinit();
+        }
+        self.items.deinit();
+        self.cursor.deinit();
+    }
+
+    pub fn addImage(self: *Canvas, imagePath: [:0]const u8, x: f32, y: f32) !void {
+        const image = try rl.loadImage(imagePath);
+        defer rl.unloadImage(image);
+
+        const texture = try rl.loadTextureFromImage(image);
+        const new_image = Image{
+            .texture = texture,
+            .x = x,
+            .y = y,
+        };
+
+        try self.items.append(Item{ .Image = new_image });
     }
 
     pub fn update(self: *Canvas) void {
@@ -110,19 +147,25 @@ const Canvas = struct {
     }
 
     pub fn draw(self: Canvas) void {
-        const dest_rec = rl.Rectangle{
-            .x = self.x,
-            .y = self.y,
-            .width = @as(f32, @floatFromInt(self.texture.width)) * self.scale,
-            .height = @as(f32, @floatFromInt(self.texture.height)) * self.scale,
-        };
+        for (self.items.items) |item| {
+            switch (item) {
+                .Image => |img| {
+                    const dest_rec = rl.Rectangle{
+                        .x = self.x + img.x * self.scale,
+                        .y = self.y + img.y * self.scale,
+                        .width = @as(f32, @floatFromInt(img.texture.width)) * self.scale,
+                        .height = @as(f32, @floatFromInt(img.texture.height)) * self.scale,
+                    };
 
-        rl.drawTexturePro(self.texture, rl.Rectangle{
-            .x = 0,
-            .y = 0,
-            .width = @as(f32, @floatFromInt(self.texture.width)),
-            .height = @as(f32, @floatFromInt(self.texture.height)),
-        }, dest_rec, rl.Vector2{ .x = 0, .y = 0 }, 0, rl.Color.white);
+                    rl.drawTexturePro(img.texture, rl.Rectangle{
+                        .x = 0,
+                        .y = 0,
+                        .width = @as(f32, @floatFromInt(img.texture.width)),
+                        .height = @as(f32, @floatFromInt(img.texture.height)),
+                    }, dest_rec, rl.Vector2{ .x = 0, .y = 0 }, 0, rl.Color.white);
+                },
+            }
+        }
 
         if (!self.hand_mode and self.selecting) {
             const current_mouse_x = @as(f32, @floatFromInt(rl.getMouseX()));
@@ -142,12 +185,14 @@ const Canvas = struct {
             rl.drawRectangleRec(rect, rl.Color{ .r = 0, .g = 128, .b = 255, .a = 128 });
             rl.drawRectangleLinesEx(rect, 1.0, rl.Color.blue);
         }
+
+        self.cursor.draw(self.hand_mode, self.dragging);
     }
 };
 
 pub fn main() anyerror!void {
-    const screenWidth = 800;
-    const screenHeight = 600;
+    const screenWidth = 1280;
+    const screenHeight = 720;
 
     rl.setConfigFlags(.{ .window_resizable = true });
     rl.initWindow(screenWidth, screenHeight, "sakura");
@@ -155,9 +200,13 @@ pub fn main() anyerror!void {
     rl.setTargetFPS(60);
     rl.setGesturesEnabled(.pinch_out);
     rl.setGesturesEnabled(.pinch_in);
+    rl.hideCursor();
 
-    var canvas = try Canvas.init(screenWidth, screenHeight, "test/image.png");
+    const allocator = std.heap.page_allocator;
+    var canvas = try Canvas.init(allocator);
     defer canvas.deinit();
+
+    try canvas.addImage("test/image.png", 100, 100);
 
     while (!rl.windowShouldClose()) {
         canvas.update();
