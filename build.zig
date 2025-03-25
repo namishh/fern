@@ -1,11 +1,11 @@
 const std = @import("std");
-const rlz = @import("raylib-zig");
+const rlz = @import("raylib_zig");
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const raylib_dep = b.dependency("raylib-zig", .{
+    const raylib_dep = b.dependency("raylib_zig", .{
         .target = target,
         .optimize = optimize,
     });
@@ -34,10 +34,16 @@ pub fn build(b: *std.Build) !void {
         return;
     }
 
+    const zigimg_dependency = b.dependency("zigimg", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
     const exe = b.addExecutable(.{ .name = "sakura", .root_source_file = b.path("src/main.zig"), .optimize = optimize, .target = target });
 
     exe.linkLibrary(raylib_artifact);
     exe.root_module.addImport("raylib", raylib);
+    exe.root_module.addImport("zigimg", zigimg_dependency.module("zigimg"));
     const run_cmd = b.addRunArtifact(exe);
     const run_step = b.step("run", "Run 'sakura'");
     run_step.dependOn(&run_cmd.step);
