@@ -27,6 +27,8 @@ pub const Cursor = struct {
     }
 
     pub fn draw(self: Cursor, hand_mode: bool, dragging: bool) void {
+        if (!rl.isWindowFocused() or !rl.isCursorOnScreen()) return;
+
         const mouse_x = @as(f32, @floatFromInt(rl.getMouseX()));
         const mouse_y = @as(f32, @floatFromInt(rl.getMouseY()));
         const texture = if (hand_mode) (if (dragging) self.hand_grabbing else self.hand_released) else self.normal;
