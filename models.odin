@@ -2,6 +2,7 @@ package fern
 
 import "core:c"
 import "core:fmt"
+import "core:os"
 import strings "core:strings"
 
 model_context :: struct {
@@ -12,7 +13,14 @@ model_context :: struct {
 }
 
 init_onnx_model :: proc(model_path: string) -> (model_context, bool) {
-    fmt.printfln("Loading model from: %s", string(model_path)) 
+    fmt.printfln("Loading model from: %s", model_path)
+
+    model_data, ok := os.read_entire_file(model_path)
+    if !ok {
+        fmt.println("Failed to read model file:", model_path)
+        return model_context{}, false
+    }
+    defer delete(model_data)
 
     ctx: model_context
     ctx.model_path = model_path
@@ -43,11 +51,11 @@ init_onnx_model :: proc(model_path: string) -> (model_context, bool) {
     defer api.ReleaseSessionOptions(options)
     fmt.println("Session options created successfully")
 
-    status = api.CreateSession(ctx.env, strings.clone_to_cstring(model_path), options, &ctx.session)
+    status = api.CreateSessionFromArray(ctx.env, raw_data(model_data), len(model_data), options, &ctx.session)
     if status != nil {
         err_msg := api.GetErrorMessage(status)
         err_str := strings.clone_from_cstring(err_msg)
-        fmt.printfln("Failed to create session: %s", err_str)
+        fmt.printfln("Failed to create session from array: %s", err_str)
         api.ReleaseStatus(status)
         api.ReleaseEnv(ctx.env)
         return ctx, false
@@ -65,7 +73,7 @@ init_onnx_model :: proc(model_path: string) -> (model_context, bool) {
         return ctx, false
     }
 
-    fmt.printfln("Model loaded successfully: %s", string(model_path))
+    fmt.printfln("Model loaded successfully: %s", model_path)
     return ctx, true
 }
 

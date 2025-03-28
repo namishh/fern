@@ -597,13 +597,13 @@ main :: proc() {
     rl.SetTargetFPS(144)
     rl.HideCursor()
 
-    // model_ctx, model_ok := init_onnx_model("models/rmbg.onnx")
-    // if !model_ok {
-    //     fmt.println("Failed to initialize ONNX model")
-    //     rl.CloseWindow()
-    //     return
-    // }
-    // defer deinit_onnx_model(&model_ctx)
+    model_ctx, model_ok := init_onnx_model("models/rmbg.onnx")
+    if !model_ok {
+        fmt.println("Failed to initialize ONNX model")
+        rl.CloseWindow()
+        return
+    }
+    defer deinit_onnx_model(&model_ctx)
 
     c := canvas_init()
     defer canvas_deinit(&c)
