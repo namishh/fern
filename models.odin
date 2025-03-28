@@ -1,4 +1,4 @@
-package sakura
+package fern
 
 import "core:c"
 import "core:fmt"
@@ -20,7 +20,7 @@ init_onnx_model :: proc(model_path: string) -> (model_context, bool) {
     api_base := OrtGetApiBase()
     api := api_base.GetApi(ORT_API_VERSION)
 
-    status := api.CreateEnv(.ORT_LOGGING_LEVEL_WARNING, "sakura", &ctx.env)
+    status := api.CreateEnv(.ORT_LOGGING_LEVEL_WARNING, "fern", &ctx.env)
     if status != nil {
         err_msg := api.GetErrorMessage(status)
         err_str := strings.clone_from_cstring(err_msg)

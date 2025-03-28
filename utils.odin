@@ -1,4 +1,4 @@
-package sakura
+package fern
 
 clamp :: proc(value, min_val, max_val: f32) -> f32 {
     return max(min_val, min(max_val, value))

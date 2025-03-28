@@ -1,4 +1,4 @@
-package sakura
+package fern
 
 import rl "vendor:raylib"
 import img "core:image"
@@ -593,23 +593,23 @@ canvas_draw_grid :: proc(self: ^canvas) {
 
 main :: proc() {
     rl.SetConfigFlags({.WINDOW_RESIZABLE, .MSAA_4X_HINT})
-    rl.InitWindow(1600, 900, "My First Game")
+    rl.InitWindow(1600, 900, "fern time")
     rl.SetTargetFPS(144)
     rl.HideCursor()
 
-    model_ctx, model_ok := init_onnx_model("models/rmbg.onnx")
-    if !model_ok {
-        fmt.println("Failed to initialize ONNX model")
-        rl.CloseWindow()
-        return
-    }
-    defer deinit_onnx_model(&model_ctx)
+    // model_ctx, model_ok := init_onnx_model("models/rmbg.onnx")
+    // if !model_ok {
+    //     fmt.println("Failed to initialize ONNX model")
+    //     rl.CloseWindow()
+    //     return
+    // }
+    // defer deinit_onnx_model(&model_ctx)
 
     c := canvas_init()
     defer canvas_deinit(&c)
 
     canvas_add_image(&c, "test/image.png", 100, 100)
-    canvas_add_image(&c, "test/image2.png", 100, 100)
+    canvas_add_image(&c, "test/image2.jpg", 100, 100)
 
     for !rl.WindowShouldClose() {
         canvas_update(&c)

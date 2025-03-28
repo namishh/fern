@@ -1,4 +1,4 @@
-package sakura
+package fern
 
 import rl "vendor:raylib"
 
