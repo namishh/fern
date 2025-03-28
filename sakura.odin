@@ -3,6 +3,8 @@ package sakura
 import rl "vendor:raylib"
 import img "core:image"
 import math "core:math"
+import fmt "core:fmt"
+import os "core:os"
 
 // ITEM
 item_type :: enum {
@@ -16,6 +18,7 @@ item :: struct {
 }
 
 image_item :: struct {
+    image_data: [^]u8,
     texture: rl.Texture2D,
     x, y: f32,
     scale_x, scale_y: f32,
@@ -281,6 +284,7 @@ canvas_deinit :: proc(self: ^canvas) {
 
 canvas_add_image :: proc(self: ^canvas, image_path: cstring, x, y: f32) -> bool {
     image := rl.LoadImage(image_path)
+    image_data := cast([^]u8)image.data
     if image.data == nil {
         return false
     }
@@ -291,6 +295,7 @@ canvas_add_image :: proc(self: ^canvas, image_path: cstring, x, y: f32) -> bool 
         texture = texture,
         x = x,
         y = y,
+        image_data = image_data,
         scale_x = 1.0,
         scale_y = 1.0,
         width = f32(texture.width),
@@ -591,6 +596,14 @@ main :: proc() {
     rl.InitWindow(1600, 900, "My First Game")
     rl.SetTargetFPS(144)
     rl.HideCursor()
+
+    model_ctx, model_ok := init_onnx_model("models/rmbg.onnx")
+    if !model_ok {
+        fmt.println("Failed to initialize ONNX model")
+        rl.CloseWindow()
+        return
+    }
+    defer deinit_onnx_model(&model_ctx)
 
     c := canvas_init()
     defer canvas_deinit(&c)

@@ -2,7 +2,6 @@ package sakura
 
 import rl "vendor:raylib"
 
-// CURSOR
 cursor :: struct {
     normal, hand_released, hand_grabbing: rl.Texture2D,
 }
