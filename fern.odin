@@ -226,6 +226,7 @@ selector_clear_selection :: proc(self: ^selector) {
 canvas :: struct {
     items : [dynamic]item,
     x, y: f32,
+    model: ^model_context,
     cursor: ^cursor,
     selector: ^selector,
     scale, min_scale, max_scale: f32,
@@ -240,13 +241,22 @@ canvas :: struct {
     selector_start_x, selector_start_y: f32,
 }
 
-canvas_init :: proc() -> canvas {
+canvas_init :: proc() -> Maybe(canvas) {
     s := selector_init()
     c := cursor_init()
     sel := new(selector)
     cur := new(cursor)
     sel^ = s
     cur^ = c
+
+    model_ctx, model_ok := init_onnx_model("models/u2net.onnx")
+    if !model_ok {
+        fmt.println("Failed to initialize ONNX model")
+        rl.CloseWindow()
+        return nil
+    }
+
+
     return canvas{
         items = [dynamic]item{},
         x = 0,
@@ -256,6 +266,7 @@ canvas_init :: proc() -> canvas {
         scale = 1.0,
         min_scale = 0.1,
         max_scale = 5.0,
+        model = &model_ctx,
         dragging = false,
         draggin_item = false,
         hand_mode = false,
@@ -276,6 +287,7 @@ canvas_deinit :: proc(self: ^canvas) {
         item_deinit(&i)
     }
     cursor_deinit(self.cursor)
+    deinit_onnx_model(self.model)
     selector_clear_selection(self.selector)
     free(self.cursor)
     free(self.selector)
@@ -597,15 +609,7 @@ main :: proc() {
     rl.SetTargetFPS(144)
     rl.HideCursor()
 
-    model_ctx, model_ok := init_onnx_model("models/rmbg.onnx")
-    if !model_ok {
-        fmt.println("Failed to initialize ONNX model")
-        rl.CloseWindow()
-        return
-    }
-    defer deinit_onnx_model(&model_ctx)
-
-    c := canvas_init()
+    c := canvas_init().(canvas)
     defer canvas_deinit(&c)
 
     canvas_add_image(&c, "test/image.png", 100, 100)

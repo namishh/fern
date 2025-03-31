@@ -1,10 +1,12 @@
 package fern
 
-clamp :: proc(value, min_val, max_val: f32) -> f32 {
-    return max(min_val, min(max_val, value))
+clamp :: proc(value, min_val, max_val: $T) -> T {
+    if value < min_val do return min_val
+    if value > max_val do return max_val
+    return value
 }
 
-min :: proc(a, b: f32) -> f32 {
+min :: proc(a, b: $T) -> T {
     return a if a < b else b
 }
 
