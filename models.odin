@@ -1,102 +1,146 @@
 package fern
 
+import "core:c"
 import "core:fmt"
 import "core:os"
 import strings "core:strings"
 
 model_context :: struct {
-	env:        ^OrtEnv,
-	session:    ^OrtSession,
-	allocator:  ^OrtAllocator,
-	model_path: string,
+	api:              ^OrtApi,
+	env:              ^OrtEnv,
+	encoder_session:  ^OrtSession,
+	decoder_session:  ^OrtSession,
+	memory_info:      ^OrtMemoryInfo,
+	image_embeddings: ^f32,
+	embedding_dims:   [4]i64,
+	model_width:      int,
+	model_height:     int,
 }
 
-init_onnx_model :: proc(model_path: string) -> (model_context, bool) {
-	fmt.printfln("Loading model from: %s", model_path)
 
-	model_data, ok := os.read_entire_file(model_path)
-	if !ok {
-		fmt.println("Failed to read model file:", model_path)
-		return model_context{}, false
+init_onnx_model :: proc(
+	model_encoder_path: string,
+	model_decoder_path: string,
+) -> Maybe(^model_context) {
+
+	ctx := new(model_context)
+	if ctx == nil {
+		fmt.println("Failed to allocate memory for model context")
+		return nil
 	}
-	defer delete(model_data)
 
-	ctx: model_context
-	ctx.model_path = model_path
+	ctx.api = OrtGetApiBase().GetApi(ORT_API_VERSION)
+	if ctx.api == nil {
+		fmt.println("Failed to get API base")
+		free(ctx)
+		return nil
+	}
 
-	api_base := OrtGetApiBase()
-	api := api_base.GetApi(ORT_API_VERSION)
+	status := ctx.api.CreateEnv(.ORT_LOGGING_LEVEL_WARNING, "onnx_model", &ctx.env)
 
-	status := api.CreateEnv(.ORT_LOGGING_LEVEL_WARNING, "fern", &ctx.env)
 	if status != nil {
-		err_msg := api.GetErrorMessage(status)
-		err_str := strings.clone_from_cstring(err_msg)
-		fmt.printfln("Failed to create environment: %s", err_str)
-		api.ReleaseStatus(status)
-		return ctx, false
+		fmt.println("Failed to create environment")
+		ctx.api.ReleaseStatus(status)
+		free(ctx)
+		return nil
+
 	}
-	fmt.println("Environment created successfully")
 
 	options: ^OrtSessionOptions
-	status = api.CreateSessionOptions(&options)
+	status = ctx.api.CreateSessionOptions(&options)
 	if status != nil {
-		err_msg := api.GetErrorMessage(status)
-		err_str := strings.clone_from_cstring(err_msg)
-		fmt.printfln("Failed to create session options: %s", err_str)
-		api.ReleaseStatus(status)
-		api.ReleaseEnv(ctx.env)
-		return ctx, false
-	}
-	defer api.ReleaseSessionOptions(options)
-	fmt.println("Session options created successfully")
-
-	status = api.CreateSessionFromArray(
-		ctx.env,
-		raw_data(model_data),
-		len(model_data),
-		options,
-		&ctx.session,
-	)
-	if status != nil {
-		err_msg := api.GetErrorMessage(status)
-		err_str := strings.clone_from_cstring(err_msg)
-		fmt.printfln("Failed to create session from array: %s", err_str)
-		api.ReleaseStatus(status)
-		api.ReleaseEnv(ctx.env)
-		return ctx, false
-	}
-	fmt.println("Session created successfully")
-
-	status = api.GetAllocatorWithDefaultOptions(&ctx.allocator)
-	if status != nil {
-		err_msg := api.GetErrorMessage(status)
-		err_str := strings.clone_from_cstring(err_msg)
-		fmt.printfln("Failed to get allocator: %s", err_str)
-		api.ReleaseStatus(status)
-		api.ReleaseSession(ctx.session)
-		api.ReleaseEnv(ctx.env)
-		return ctx, false
+		fmt.println("Failed to create session options")
+		ctx.api.ReleaseStatus(status)
+		ctx.api.ReleaseEnv(ctx.env)
+		free(ctx)
+		return nil
 	}
 
-	fmt.printfln("Model loaded successfully: %s", model_path)
-	return ctx, true
+
+	encoder_path_cstr := strings.clone_to_cstring(model_encoder_path, context.temp_allocator)
+	fmt.printf("Attempting to load encoder model from: %s\n", encoder_path_cstr)
+
+	status = ctx.api.CreateSession(ctx.env, encoder_path_cstr, options, &ctx.encoder_session)
+	if status != nil {
+		error_message := ctx.api.GetErrorMessage(status)
+		fmt.printf("Failed to create encoder session: %s\n", error_message)
+
+		if !os.exists(model_encoder_path) {
+			fmt.printf("File does not exist: %s\n", model_encoder_path)
+		}
+
+		ctx.api.ReleaseStatus(status)
+		ctx.api.ReleaseSessionOptions(options)
+		ctx.api.ReleaseEnv(ctx.env)
+		free(ctx)
+		return nil
+	}
+
+	decoder_path_cstr := strings.clone_to_cstring(model_decoder_path, context.temp_allocator)
+	fmt.printf("Attempting to load decoder model from: %s\n", decoder_path_cstr)
+
+	status = ctx.api.CreateSession(ctx.env, decoder_path_cstr, options, &ctx.decoder_session)
+	if status != nil {
+		error_message := ctx.api.GetErrorMessage(status)
+		fmt.printf("Failed to create encoder session: %s\n", error_message)
+
+		if !os.exists(model_decoder_path) {
+			fmt.printf("File does not exist: %s\n", model_decoder_path)
+		}
+
+		ctx.api.ReleaseStatus(status)
+		ctx.api.ReleaseSession(ctx.encoder_session)
+		ctx.api.ReleaseSessionOptions(options)
+		ctx.api.ReleaseEnv(ctx.env)
+		free(ctx)
+		return nil
+	}
+
+	status = ctx.api.CreateCpuMemoryInfo(.OrtArenaAllocator, .OrtMemTypeDefault, &ctx.memory_info)
+
+	if status != nil {
+		fmt.println("Failed to create memory info")
+		ctx.api.ReleaseStatus(status)
+		ctx.api.ReleaseSession(ctx.encoder_session)
+		ctx.api.ReleaseSession(ctx.decoder_session)
+		ctx.api.ReleaseSessionOptions(options)
+		ctx.api.ReleaseEnv(ctx.env)
+		free(ctx)
+		return nil
+	}
+
+	ctx.api.ReleaseSessionOptions(options)
+	fmt.println("Model loaded successfully")
+
+	return ctx
+
 }
 
+
 deinit_onnx_model :: proc(ctx: ^model_context) {
-    api_base := OrtGetApiBase()
-    api := api_base.GetApi(ORT_API_VERSION)
-    
-    api.ReleaseAllocator(ctx.allocator)
-    fmt.println("Allocator released")
-    api.ReleaseSession(ctx.session)
-    fmt.println("Session released")
-    api.ReleaseEnv(ctx.env)
-    fmt.println("Environment released")
-    
-    
-    ctx.allocator = nil
-    ctx.session = nil
-    ctx.env = nil
-    delete(ctx.model_path)
-    free(ctx)
+	if ctx == nil {
+		return
+	}
+
+	if ctx.encoder_session != nil {
+		ctx.api.ReleaseSession(ctx.encoder_session)
+	}
+
+	if ctx.decoder_session != nil {
+		ctx.api.ReleaseSession(ctx.decoder_session)
+	}
+
+	if ctx.memory_info != nil {
+		ctx.api.ReleaseMemoryInfo(ctx.memory_info)
+	}
+
+	if ctx.env != nil {
+		ctx.api.ReleaseEnv(ctx.env)
+	}
+
+	if ctx.image_embeddings != nil {
+		free(ctx.image_embeddings)
+	}
+
+	fmt.println("Model deinitialized successfully\n")
 }

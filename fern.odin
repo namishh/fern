@@ -251,13 +251,14 @@ canvas_init :: proc() -> Maybe(canvas) {
     sel^ = s
     cur^ = c
 
-    model_ctx, model_ok := init_onnx_model("models/u2net.onnx")
-    if !model_ok {
-        fmt.println("Failed to initialize ONNX model")
-        rl.CloseWindow()
+    model_ctx, ok := init_onnx_model("models/sam-encoder.onnx", "models/sam-decoder.onnx").?
+
+    if !ok {
+        fmt.println("Failed to initialize model context")
+        free(sel)
+        free(cur)
         return nil
     }
-
 
     return canvas{
         items = [dynamic]item{},
@@ -268,7 +269,7 @@ canvas_init :: proc() -> Maybe(canvas) {
         scale = 1.0,
         min_scale = 0.1,
         max_scale = 5.0,
-        model = &model_ctx,
+        model = model_ctx,
         dragging = false,
         draggin_item = false,
         hand_mode = false,
@@ -613,10 +614,14 @@ main :: proc() {
     rl.SetTargetFPS(144)
     rl.HideCursor()
 
-    c := canvas_init().(canvas)
+    c, ok := canvas_init().?
+    if !ok {
+        fmt.println("Failed to initialize canvas")
+        return
+    }
     defer canvas_deinit(&c)
 
-    canvas_add_image(&c, "test/image.png", 100, 100)
+    canvas_add_image(&c, "test/12.png", 100, 100)
     canvas_add_image(&c, "test/image2.jpg", 100, 100)
 
     for !rl.WindowShouldClose() {
