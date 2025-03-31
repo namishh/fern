@@ -83,9 +83,20 @@ init_onnx_model :: proc(model_path: string) -> (model_context, bool) {
 }
 
 deinit_onnx_model :: proc(ctx: ^model_context) {
-	api_base := OrtGetApiBase()
-	api := api_base.GetApi(ORT_API_VERSION)
-	if ctx.allocator != nil do api.ReleaseAllocator(ctx.allocator)
-	if ctx.session != nil do api.ReleaseSession(ctx.session)
-	if ctx.env != nil do api.ReleaseEnv(ctx.env)
+    api_base := OrtGetApiBase()
+    api := api_base.GetApi(ORT_API_VERSION)
+    
+    api.ReleaseAllocator(ctx.allocator)
+    fmt.println("Allocator released")
+    api.ReleaseSession(ctx.session)
+    fmt.println("Session released")
+    api.ReleaseEnv(ctx.env)
+    fmt.println("Environment released")
+    
+    
+    ctx.allocator = nil
+    ctx.session = nil
+    ctx.env = nil
+    delete(ctx.model_path)
+    free(ctx)
 }

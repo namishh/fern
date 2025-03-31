@@ -23,6 +23,8 @@ image_item :: struct {
     x, y: f32,
     scale_x, scale_y: f32,
     width, height: f32,
+    original_width: f32,        
+    original_height: f32,   
     rotation: f32
 }
 
@@ -286,8 +288,8 @@ canvas_deinit :: proc(self: ^canvas) {
     for &i in self.items {
         item_deinit(&i)
     }
-    cursor_deinit(self.cursor)
     deinit_onnx_model(self.model)
+    cursor_deinit(self.cursor)
     selector_clear_selection(self.selector)
     free(self.cursor)
     free(self.selector)
@@ -312,6 +314,8 @@ canvas_add_image :: proc(self: ^canvas, image_path: cstring, x, y: f32) -> bool 
         scale_y = 1.0,
         width = f32(texture.width),
         height = f32(texture.height),
+        original_width = f32(texture.width),
+        original_height = f32(texture.height),
         rotation = 0,
     }
 
